@@ -8,6 +8,7 @@ export interface Tenant {
     name: string;
     slug: string;
     evolution_config?: any;
+    ad_config?: any;
 }
 
 export interface Contact {

@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { BarChart3, MessageSquare, Settings, Users, Menu, Package } from "lucide-react"
+import { BarChart3, MessageSquare, Settings, Users, Menu, Package, ChevronLeft, ChevronRight, HelpCircle } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 // Assuming we would install shadcn sheet/button, but for MVP speed I will build a simple tailored version
@@ -16,26 +16,39 @@ interface AppLayoutProps {
 
 export function AppLayout({ children }: AppLayoutProps) {
     const [isSidebarOpen, setIsSidebarOpen] = React.useState(false)
+    const [isCollapsed, setIsCollapsed] = React.useState(false)
 
     return (
         <div className="flex h-screen w-full bg-slate-950 text-slate-100 overflow-hidden font-sans">
             {/* DESKTOP SIDEBAR */}
-            <aside className="hidden w-16 flex-col border-r border-slate-800 bg-slate-900 md:flex lg:w-64 transition-all duration-300">
-                <div className="flex h-14 items-center border-b border-slate-800 px-4 lg:h-[60px] lg:px-6">
-                    <Link href="/" className="flex items-center gap-2 font-semibold">
-                        <Package className="h-6 w-6 text-emerald-500" />
-                        <span className="hidden lg:block text-emerald-500">Impello CRM</span>
+            <aside className={cn(
+                "hidden flex-col border-r border-slate-800 bg-slate-900 md:flex transition-all duration-300 relative",
+                isCollapsed ? "w-[70px]" : "w-64"
+            )}>
+
+                {/* Toggle Button (Desktop Only) */}
+                <button
+                    onClick={() => setIsCollapsed(!isCollapsed)}
+                    className="absolute -right-3 top-9 z-50 h-6 w-6 rounded-full border border-slate-700 bg-slate-900 text-slate-400 hover:text-slate-100 flex items-center justify-center shadow-lg transition-colors hover:bg-slate-800"
+                >
+                    {isCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronLeft className="h-3 w-3" />}
+                </button>
+
+                <div className={cn("flex h-14 items-center border-b border-slate-800 transition-all overflow-hidden", isCollapsed ? "justify-center px-0" : "px-4 lg:px-6")}>
+                    <Link href="/" className="flex items-center gap-2 font-semibold whitespace-nowrap">
+                        <Package className="h-6 w-6 text-emerald-500 flex-shrink-0" />
+                        <span className={cn("text-emerald-500 transition-all duration-300", isCollapsed ? "w-0 opacity-0 overflow-hidden" : "w-auto opacity-100")}>Impello CRM</span>
                     </Link>
                 </div>
-                <div className="flex-1 overflow-auto py-2">
-                    <NavContent />
+                <div className="flex-1 overflow-auto py-2 overflow-x-hidden">
+                    <NavContent collapsed={isCollapsed} />
                 </div>
-                <div className="mt-auto p-4 border-t border-slate-800">
-                    <div className="flex items-center gap-2">
-                        <div className="h-8 w-8 rounded-full bg-emerald-900 border border-emerald-500 flex items-center justify-center text-xs font-bold">
+                <div className="mt-auto p-4 border-t border-slate-800 overflow-hidden">
+                    <div className={cn("flex items-center gap-2 transition-all", isCollapsed && "justify-center")}>
+                        <div className="h-8 w-8 rounded-full bg-emerald-900 border border-emerald-500 flex items-center justify-center text-xs font-bold flex-shrink-0">
                             JS
                         </div>
-                        <div className="hidden lg:block text-xs">
+                        <div className={cn("text-xs transition-all duration-300 whitespace-nowrap", isCollapsed ? "w-0 opacity-0 overflow-hidden" : "w-auto opacity-100")}>
                             <p className="font-medium text-slate-200">João Silva</p>
                             <p className="text-slate-500">Barbearia Vip</p>
                         </div>
@@ -61,7 +74,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                             X
                         </button>
                     </div>
-                    <NavContent onClick={() => setIsSidebarOpen(false)} />
+                    <NavContent />
                 </div>
             </div>
 
@@ -87,37 +100,56 @@ export function AppLayout({ children }: AppLayoutProps) {
     )
 }
 
-function NavContent({ onClick }: { onClick?: () => void }) {
+function NavContent({ onClick, collapsed }: { onClick?: () => void, collapsed?: boolean }) {
     const pathname = usePathname()
 
     const links = [
-        { href: "/chat", label: "Central de Chat", icon: MessageSquare },
-        { href: "/contacts", label: "Contatos", icon: Users },
         { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
+        { href: "/chat", label: "Central de Chat", icon: MessageSquare },
         { href: "/settings", label: "Configurações", icon: Settings },
     ]
 
     return (
-        <nav className="grid gap-1 px-2 text-sm font-medium">
-            {links.map((link) => {
-                const isActive = pathname.startsWith(link.href)
-                return (
-                    <Link
-                        key={link.href}
-                        href={link.href}
-                        onClick={onClick}
-                        className={cn(
-                            "flex items-center gap-3 rounded-lg px-3 py-2 transition-all hover:text-slate-100",
-                            isActive
-                                ? "bg-slate-800 text-emerald-400"
-                                : "text-slate-400 hover:bg-slate-800"
-                        )}
-                    >
-                        <link.icon className="h-5 w-5" />
-                        <span className="lg:inline">{link.label}</span>
-                    </Link>
-                )
-            })}
+        <nav className={cn("flex flex-col h-full text-sm font-medium transition-all", collapsed ? "px-2" : "px-3 py-4")}>
+            <div className="flex flex-col gap-1.5">
+                {links.map((link) => {
+                    // Match startsWith for sub-routes (like /chat/123) or exact match
+                    const isActive = pathname === link.href || (link.href !== '/' && pathname?.startsWith(link.href))
+
+                    return (
+                        <Link
+                            key={link.href}
+                            href={link.href}
+                            onClick={onClick}
+                            className={cn(
+                                "flex items-center gap-3 rounded-md px-3 py-2.5 transition-all duration-200 group relative",
+                                isActive
+                                    ? "bg-slate-800 text-slate-100 shadow-sm border border-slate-700/50"
+                                    : "text-slate-400 hover:bg-slate-800/50 hover:text-slate-200",
+                                collapsed && "justify-center px-0 py-3"
+                            )}
+                            title={collapsed ? link.label : undefined}
+                        >
+                            <link.icon className={cn("h-4 w-4 transition-colors flex-shrink-0", isActive ? "text-emerald-500" : "text-slate-500 group-hover:text-slate-300")} />
+                            <span className={cn("transition-all duration-300 whitespace-nowrap overflow-hidden", collapsed ? "w-0 opacity-0 hidden" : "w-auto opacity-100")}>{link.label}</span>
+                        </Link>
+                    )
+                })}
+            </div>
+
+            <div className={cn("mt-auto border-t border-slate-800/50 space-y-1 transition-all overflow-hidden", collapsed ? "pt-2" : "pt-4")}>
+                <button className={cn("w-full flex items-center gap-3 rounded-md px-3 py-2.5 text-slate-400 hover:bg-slate-800/50 hover:text-slate-200 transition-all text-left", collapsed && "justify-center px-0")}>
+                    <div className="h-4 w-4 flex items-center justify-center rounded border border-slate-700 bg-slate-900 text-[10px] font-bold text-slate-500 flex-shrink-0">?</div>
+                    <span className={cn("whitespace-nowrap overflow-hidden transition-all duration-300", collapsed ? "w-0 opacity-0 hidden" : "w-auto opacity-100")}>Ajuda & Suporte</span>
+                </button>
+                <Link
+                    href="/login"
+                    className={cn("flex items-center gap-3 rounded-md px-3 py-2.5 text-red-400/80 hover:bg-red-950/20 hover:text-red-400 transition-all", collapsed && "justify-center px-0")}
+                >
+                    <Users className="h-4 w-4 flex-shrink-0" /> {/* LogOut icon placeholder */}
+                    <span className={cn("whitespace-nowrap overflow-hidden transition-all duration-300", collapsed ? "w-0 opacity-0 hidden" : "w-auto opacity-100")}>Sair</span>
+                </Link>
+            </div>
         </nav>
     )
 }
