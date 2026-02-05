@@ -5,32 +5,8 @@ import { AppLayout } from "@/components/layout/app-layout"
 import { ConversionSheet } from "@/components/chat/conversion-sheet"
 import { ChatProfile } from "@/components/chat/chat-profile"
 import { Contact, Message } from "@/types"
-import { Search, Send, MoreVertical, MessageSquare, CheckCircle2, User, TrendingUp, Filter, Clock, Zap, PlusCircle, Check, ArrowLeft, PanelRightOpen, PanelRightClose } from "lucide-react"
-
-// --- MOCK DATA FOR UI DEVELOPMENT (Enhanced) ---
-const MOCK_CONTACTS: Contact[] = [
-    {
-        id: "1", tenant_id: "t1", phone: "5511988881111", name: "Joana Meta",
-        last_source: "META", latest_fbclid: "fb.1.123", funnel_status: "OPEN",
-        last_click_at: new Date().toISOString()
-    },
-    {
-        id: "2", tenant_id: "t1", phone: "5511988882222", name: "Carlos Google",
-        last_source: "GOOGLE", latest_gclid: "Cj0K...", funnel_status: "PENDING",
-        last_click_at: new Date(Date.now() - 86400000).toISOString()
-    },
-    {
-        id: "3", tenant_id: "t1", phone: "5511988883333", name: "Pedro Teste",
-        last_source: "DIRECT", funnel_status: "RESOLVED",
-        last_click_at: new Date(Date.now() - 172800000).toISOString()
-    }
-]
-
-const MOCK_MESSAGES: Message[] = [
-    { id: "m1", contact_id: "1", direction: "IN", content: "Olá, vi o anúncio no Insta!", status: "READ", created_at: new Date(Date.now() - 3600000).toISOString(), type: 'TEXT' },
-    { id: "m2", contact_id: "1", direction: "OUT", content: "Olá Joana! Tudo bem?", status: "READ", created_at: new Date(Date.now() - 3500000).toISOString(), type: 'TEXT' },
-    { id: "m3", contact_id: "1", direction: "IN", content: "Quanto custa?", status: "READ", created_at: new Date(Date.now() - 3400000).toISOString(), type: 'TEXT' },
-]
+import { Search, Send, MoreVertical, MessageSquare, CheckCircle2, User, TrendingUp, Filter, Clock, Zap, PlusCircle, Check, ArrowLeft, PanelRightOpen, PanelRightClose, Plus } from "lucide-react"
+import { supabase } from "@/lib/supabase"
 
 // --- QUICK REPLIES DATA ---
 const QUICK_REPLIES = [
@@ -42,12 +18,13 @@ const QUICK_REPLIES = [
 
 export default function ChatPage() {
     // State - Core
-    const [contacts, setContacts] = useState<Contact[]>(MOCK_CONTACTS)
-    const [selectedContact, setSelectedContact] = useState<Contact | null>(MOCK_CONTACTS[0])
-    const [messages, setMessages] = useState<Message[]>([])
+    const [contacts, setContacts] = useState<any[]>([])
+    const [selectedContact, setSelectedContact] = useState<any | null>(null)
+    const [messages, setMessages] = useState<any[]>([])
     const [msgInput, setMsgInput] = useState("")
     const [isConversionSheetOpen, setIsConversionSheetOpen] = useState(false)
     const [sessionSalesTotal, setSessionSalesTotal] = useState(0)
+    const [loadingContacts, setLoadingContacts] = useState(true)
 
     // State - Productivity Features
     const [filterStatus, setFilterStatus] = useState<"ALL" | "OPEN" | "RESOLVED">("ALL")
@@ -59,6 +36,59 @@ export default function ChatPage() {
 
     const scrollRef = useRef<HTMLDivElement>(null)
 
+    // DB FETCH CONTACTS
+    const fetchContacts = async () => {
+        setLoadingContacts(true)
+        const { data, error } = await supabase
+            .from('contacts')
+            .select('*')
+            .order('last_interaction_at', { ascending: false })
+
+        if (data) setContacts(data)
+        setLoadingContacts(false)
+    }
+
+    useEffect(() => {
+        fetchContacts()
+
+        // Subscribe to new contacts (Optional for real-time)
+        const channel = supabase
+            .channel('public:contacts')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'contacts' }, (payload) => {
+                fetchContacts()
+            })
+            .subscribe()
+
+        return () => { supabase.removeChannel(channel) }
+    }, [])
+
+    // DB FETCH MESSAGES
+    useEffect(() => {
+        if (selectedContact?.id) {
+            const fetchMessages = async () => {
+                const { data } = await supabase
+                    .from('messages')
+                    .select('*')
+                    .eq('contact_id', selectedContact.id)
+                    .order('created_at', { ascending: true })
+                if (data) setMessages(data)
+            }
+            fetchMessages()
+
+            // Realtime logic for messages
+            const channel = supabase
+                .channel(`chat:${selectedContact.id}`)
+                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `contact_id=eq.${selectedContact.id}` }, (payload) => {
+                    setMessages((prev) => [...prev, payload.new])
+                })
+                .subscribe()
+
+            return () => { supabase.removeChannel(channel) }
+        } else {
+            setMessages([])
+        }
+    }, [selectedContact])
+
     // Filter Logic
     const filteredContacts = contacts.filter(c => {
         if (filterStatus === "ALL") return true
@@ -66,15 +96,6 @@ export default function ChatPage() {
         if (filterStatus === "RESOLVED") return c.funnel_status === "RESOLVED"
         return true
     })
-
-    // Mock Fetch Messages
-    useEffect(() => {
-        if (selectedContact?.id === "1") {
-            setMessages(MOCK_MESSAGES)
-        } else {
-            setMessages([])
-        }
-    }, [selectedContact])
 
     // Scroll Helper
     useEffect(() => {
@@ -93,28 +114,32 @@ export default function ChatPage() {
         }
     }
 
-    const handleSendMessage = () => {
-        if (!msgInput.trim()) return
+    const handleSendMessage = async () => {
+        if (!msgInput.trim() || !selectedContact) return
 
         // Auto-Reopen Logic
-        if (selectedContact?.funnel_status === 'RESOLVED') {
-            setContacts(prev => prev.map(c => c.id === selectedContact.id ? { ...c, funnel_status: 'OPEN' } : c))
-            setSelectedContact(prev => prev ? { ...prev, funnel_status: 'OPEN' } : null)
-            // No system message needed for implicit reopen, or maybe a small one? Let's keep it clean as requested "ficará pendente"
+        if (selectedContact.funnel_status === 'RESOLVED') {
+            await supabase.from('contacts').update({ funnel_status: 'OPEN' }).eq('id', selectedContact.id)
+            setSelectedContact({ ...selectedContact, funnel_status: 'OPEN' })
+            fetchContacts()
         }
 
-        const newMsg: Message = {
-            id: Math.random().toString(),
-            contact_id: selectedContact!.id,
+        const newMsg = {
+            contact_id: selectedContact.id,
             direction: 'OUT',
             content: msgInput,
             status: 'SENT',
-            created_at: new Date().toISOString(),
             type: 'TEXT'
         }
-        setMessages(prev => [...prev, newMsg])
+
+        // Optimistic UI could go here, but with Supabase RT it's fast enough usually
         setMsgInput("")
         setShowQuickReplies(false)
+
+        await supabase.from('messages').insert(newMsg)
+
+        // Update contact timestamp
+        await supabase.from('contacts').update({ last_interaction_at: new Date().toISOString() }).eq('id', selectedContact.id)
     }
 
     const selectQuickReply = (text: string) => {
@@ -122,54 +147,67 @@ export default function ChatPage() {
         setShowQuickReplies(false)
     }
 
-    const handleSaleConfirmed = (amount: number, platform: string) => {
+    const handleSaleConfirmed = async (amount: number, platform: string) => {
         setSessionSalesTotal(prev => prev + amount)
-        const sysMsg: Message = {
-            id: Math.random().toString(),
-            contact_id: selectedContact!.id,
+        const sysMsg = {
+            contact_id: selectedContact.id,
             direction: 'OUT',
             content: `✅ Venda de R$ ${amount.toFixed(2)} registrada com sucesso. Atribuída ao ${platform}.`,
             status: 'READ',
-            created_at: new Date().toISOString(),
             type: 'SYSTEM'
         }
-        setMessages(prev => [...prev, sysMsg])
+        await supabase.from('messages').insert(sysMsg)
     }
 
-    const toggleResolve = () => {
+    const toggleResolve = async () => {
         if (!selectedContact) return
 
         const isResolved = selectedContact.funnel_status === 'RESOLVED'
         const newStatus = isResolved ? 'OPEN' : 'RESOLVED'
 
+        // Update UI immediately (Optimistic)
+        setSelectedContact({ ...selectedContact, funnel_status: newStatus })
         setContacts(prev => prev.map(c => c.id === selectedContact.id ? { ...c, funnel_status: newStatus } : c))
-        setSelectedContact(prev => prev ? { ...prev, funnel_status: newStatus } : null)
 
-        const sysMsg: Message = {
-            id: Math.random().toString(),
+        // DB Update
+        await supabase.from('contacts').update({ funnel_status: newStatus }).eq('id', selectedContact.id)
+
+        const sysMsg = {
             contact_id: selectedContact.id,
             direction: 'OUT',
             content: isResolved ? `↩️ Conversa reaberta manualmente.` : `🏁 Atendimento marcado como Resolvido.`,
             status: 'READ',
-            created_at: new Date().toISOString(),
             type: 'SYSTEM'
         }
-        setMessages(prev => [...prev, sysMsg])
+        await supabase.from('messages').insert(sysMsg)
     }
 
-    const scheduleFollowUp = (timeLabel: string) => {
+    const scheduleFollowUp = async (timeLabel: string) => {
         setShowFollowUp(false)
         if (!selectedContact) return
-        const sysMsg: Message = {
-            id: Math.random().toString(),
+        const sysMsg = {
             contact_id: selectedContact.id,
             direction: 'OUT',
             content: `⏰ Follow-up agendado para: ${timeLabel}`,
             status: 'READ',
-            created_at: new Date().toISOString(),
             type: 'SYSTEM'
         }
-        setMessages(prev => [...prev, sysMsg])
+        await supabase.from('messages').insert(sysMsg)
+    }
+
+    const handleCreateTestContact = async () => {
+        const fakeName = prompt("Nome do Contato:") || "Visitante Teste"
+        const fakePhone = prompt("Telefone:") || "5511999999999"
+
+        const { error } = await supabase.from('contacts').insert({
+            name: fakeName,
+            phone: fakePhone,
+            last_source: 'DIRECT',
+            funnel_status: 'OPEN'
+        })
+
+        if (error) alert("Erro ao criar contato")
+        else fetchContacts()
     }
 
     return (
@@ -181,12 +219,9 @@ export default function ChatPage() {
                     <div className="p-4 border-b border-slate-800 space-y-4">
                         <div className="flex items-center justify-between">
                             <h2 className="font-semibold text-slate-100">Mensagens</h2>
-                            {sessionSalesTotal > 0 && (
-                                <div className="flex items-center gap-1.5 text-xs font-medium text-emerald-400 bg-emerald-950/40 px-2 py-1 rounded border border-emerald-900/50">
-                                    <TrendingUp className="h-3 w-3" />
-                                    <span>Hoje: R$ {sessionSalesTotal.toFixed(2)}</span>
-                                </div>
-                            )}
+                            <button onClick={handleCreateTestContact} className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-md transition-colors" title="Criar Contato Teste">
+                                <Plus className="h-4 w-4" />
+                            </button>
                         </div>
 
                         {/* FILTERS */}
@@ -221,9 +256,12 @@ export default function ChatPage() {
                     </div>
 
                     <div className="flex-1 overflow-y-auto">
-                        {filteredContacts.length === 0 ? (
-                            <div className="p-8 text-center text-slate-500 text-sm">
-                                Nenhum contato neste filtro.
+                        {loadingContacts ? (
+                            <div className="p-8 text-center text-slate-500 text-xs">Carregando contatos...</div>
+                        ) : filteredContacts.length === 0 ? (
+                            <div className="p-8 text-center text-slate-500 text-sm flex flex-col items-center gap-2">
+                                <span>Nenhum contato encontrado.</span>
+                                <button onClick={handleCreateTestContact} className="text-emerald-500 text-xs hover:underline">Criar um teste</button>
                             </div>
                         ) : filteredContacts.map((contact) => (
                             <div
@@ -233,7 +271,7 @@ export default function ChatPage() {
                             >
                                 <div className="flex justify-between items-start mb-1">
                                     <span className={`font-medium truncate ${contact.funnel_status === 'RESOLVED' ? 'text-slate-500 line-through' : 'text-slate-200'}`}>{contact.name || contact.phone}</span>
-                                    <span className="text-xs text-slate-500">{contact.last_click_at ? new Date(contact.last_click_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</span>
+                                    <span className="text-xs text-slate-500">{contact.last_interaction_at ? new Date(contact.last_interaction_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</span>
                                 </div>
                                 <div className="flex justify-between items-center">
                                     <p className="text-sm text-slate-400 truncate w-4/5">
@@ -294,8 +332,6 @@ export default function ChatPage() {
 
                                 <div className="flex items-center gap-1 sm:gap-2">
 
-                                    {/* (Action Buttons - Resolve Removed) */}
-
                                     {/* Follow Up */}
                                     <div className="relative hidden sm:block">
                                         <button
@@ -344,8 +380,8 @@ export default function ChatPage() {
                             <button
                                 onClick={toggleResolve}
                                 className={`w-full py-3 flex items-center justify-center gap-2.5 text-xs font-bold uppercase tracking-widest transition-all duration-300 border-b shadow-sm relative overflow-hidden group ${selectedContact.funnel_status === 'RESOLVED'
-                                        ? 'bg-slate-900/80 border-slate-800 text-slate-500 hover:bg-slate-900 hover:text-slate-400'
-                                        : 'bg-gradient-to-r from-emerald-950/30 via-emerald-900/20 to-emerald-950/30 border-emerald-900/50 text-emerald-500 hover:text-emerald-400 hover:border-emerald-500/30'
+                                    ? 'bg-slate-900/80 border-slate-800 text-slate-500 hover:bg-slate-900 hover:text-slate-400'
+                                    : 'bg-gradient-to-r from-emerald-950/30 via-emerald-900/20 to-emerald-950/30 border-emerald-900/50 text-emerald-500 hover:text-emerald-400 hover:border-emerald-500/30'
                                     }`}
                             >
                                 {/* Hover Effect Layer */}
@@ -372,13 +408,13 @@ export default function ChatPage() {
                                 {messages.length === 0 ? (
                                     <div className="flex h-full flex-col items-center justify-center text-slate-600 space-y-2">
                                         <MessageSquare className="h-12 w-12 opacity-20" />
-                                        <p>Este é o início da sua conversa simulada.</p>
+                                        <p>Inicie a conversa agora mesmo.</p>
                                     </div>
                                 ) : (
                                     messages.map((msg) => {
                                         if (msg.type === 'SYSTEM') {
                                             const isAlert = msg.content.includes("Follow-up")
-                                            const isResolve = msg.content.includes("Resolvido")
+                                            const isResolve = msg.content.includes("Resolvido") || msg.content.includes("reaberta")
                                             return (
                                                 <div key={msg.id} className="flex justify-center my-4">
                                                     <div className={`px-4 py-2 rounded-full text-xs font-medium flex items-center gap-2 shadow-sm animate-in zoom-in-95 duration-200 border ${isAlert ? 'bg-amber-950/30 text-amber-500 border-amber-900/50' :
@@ -481,6 +517,9 @@ export default function ChatPage() {
                     <div className="hidden md:flex flex-1 items-center justify-center flex-col gap-4 text-slate-600">
                         <MessageSquare className="h-16 w-16 opacity-20" />
                         <p>Selecione um contato para monitorar</p>
+                        <button onClick={handleCreateTestContact} className="text-emerald-600 hover:text-emerald-500 font-medium">
+                            + Criar Contato Teste
+                        </button>
                     </div>
                 )}
 

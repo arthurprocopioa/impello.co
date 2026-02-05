@@ -2,20 +2,51 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Loader2, Lock, Package } from "lucide-react"
+import { Loader2, Lock, Package, ArrowRight } from "lucide-react"
+import { supabase } from "@/lib/supabase"
 
 export default function LoginPage() {
     const router = useRouter()
     const [loading, setLoading] = useState(false)
+    const [isSignUp, setIsSignUp] = useState(false)
 
-    const handleLogin = async (e: React.FormEvent) => {
+    // Auth State
+    const [email, setEmail] = useState("")
+    const [password, setPassword] = useState("")
+    const [error, setError] = useState("")
+
+    const handleAuth = async (e: React.FormEvent) => {
         e.preventDefault()
         setLoading(true)
+        setError("")
 
-        // Simulação de delay de rede
-        await new Promise(r => setTimeout(r, 1500))
+        try {
+            if (isSignUp) {
+                // SIGN UP
+                const { data, error } = await supabase.auth.signUp({
+                    email,
+                    password,
+                })
+                if (error) throw error
 
-        router.push("/dashboard")
+                alert("Conta criada com sucesso! Verifique seu email ou faça login.")
+                setIsSignUp(false) // Go back to login
+            } else {
+                // SIGN IN
+                const { data, error } = await supabase.auth.signInWithPassword({
+                    email,
+                    password,
+                })
+                if (error) throw error
+
+                router.push("/dashboard")
+            }
+        } catch (err: any) {
+            console.error("Auth error:", err)
+            setError(err.message || "Erro ao autenticar. Verifique seus dados.")
+        } finally {
+            setLoading(false)
+        }
     }
 
     return (
@@ -29,18 +60,22 @@ export default function LoginPage() {
                         <Package className="h-6 w-6 text-emerald-500" />
                     </div>
                     <h1 className="text-2xl font-bold text-white tracking-tight">Impello CRM</h1>
-                    <p className="text-slate-400 text-sm mt-2">Faça login para gerenciar sua loja</p>
+                    <p className="text-slate-400 text-sm mt-2">
+                        {isSignUp ? "Crie sua conta gratuitamente" : "Faça login para gerenciar sua loja"}
+                    </p>
                 </div>
 
                 {/* Form */}
-                <form onSubmit={handleLogin} className="space-y-4 bg-slate-900/50 p-8 rounded-xl border border-slate-800 backdrop-blur-sm shadow-2xl">
+                <form onSubmit={handleAuth} className="space-y-4 bg-slate-900/50 p-8 rounded-xl border border-slate-800 backdrop-blur-sm shadow-2xl">
                     <div className="space-y-2">
                         <label className="text-sm font-medium text-slate-300">Email</label>
                         <input
                             type="email"
+                            required
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
                             className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2.5 text-slate-100 focus:outline-none focus:border-emerald-500 transition-colors placeholder:text-slate-600"
-                            placeholder="admin@impello.com"
-                            defaultValue="demo@impello.com"
+                            placeholder="voce@empresa.com"
                         />
                     </div>
 
@@ -48,19 +83,48 @@ export default function LoginPage() {
                         <label className="text-sm font-medium text-slate-300">Senha</label>
                         <input
                             type="password"
+                            required
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
                             className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2.5 text-slate-100 focus:outline-none focus:border-emerald-500 transition-colors placeholder:text-slate-600"
                             placeholder="••••••••"
-                            defaultValue="123456"
+                            minLength={6}
                         />
                     </div>
+
+                    {error && (
+                        <div className="p-3 rounded-lg bg-red-950/30 border border-red-900/50 text-red-400 text-xs text-center">
+                            {error}
+                        </div>
+                    )}
 
                     <button
                         type="submit"
                         disabled={loading}
                         className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium h-11 rounded-lg transition-all flex items-center justify-center gap-2 mt-2"
                     >
-                        {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : "Entrar na Plataforma"}
+                        {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : (
+                            <>
+                                {isSignUp ? "Criar Conta" : "Entrar na Plataforma"}
+                                {!loading && <ArrowRight className="h-4 w-4" />}
+                            </>
+                        )}
                     </button>
+
+                    <div className="pt-4 text-center border-t border-slate-800/50 mt-4">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setIsSignUp(!isSignUp)
+                                setError("")
+                            }}
+                            className="text-sm text-slate-400 hover:text-emerald-400 transition-colors"
+                        >
+                            {isSignUp
+                                ? "Já tem uma conta? Faça Login"
+                                : "Não tem conta? Crie Agora"}
+                        </button>
+                    </div>
 
                 </form>
 

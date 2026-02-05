@@ -2,8 +2,9 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
-import { BarChart3, MessageSquare, Settings, Users, Menu, Package, ChevronLeft, ChevronRight, HelpCircle } from "lucide-react"
+import { usePathname, useRouter } from "next/navigation"
+import { BarChart3, MessageSquare, Settings, Users, Menu, Package, ChevronLeft, ChevronRight, HelpCircle, Cable, GitGraph } from "lucide-react"
+import { supabase } from "@/lib/supabase"
 
 import { cn } from "@/lib/utils"
 // Assuming we would install shadcn sheet/button, but for MVP speed I will build a simple tailored version
@@ -17,6 +18,26 @@ interface AppLayoutProps {
 export function AppLayout({ children }: AppLayoutProps) {
     const [isSidebarOpen, setIsSidebarOpen] = React.useState(false)
     const [isCollapsed, setIsCollapsed] = React.useState(false)
+    const [userEmail, setUserEmail] = React.useState<string | null>(null)
+    const router = useRouter() // Make sure useRouter is imported if not already, or use window.location
+
+    React.useEffect(() => {
+        const getUser = async () => {
+            const { data: { user } } = await supabase.auth.getUser()
+            if (user) {
+                setUserEmail(user.email || "Usuário")
+            } else {
+                // Optional: Redirect to login if strictly protected, 
+                // but middleware usually handles this.
+            }
+        }
+        getUser()
+    }, [])
+
+    const handleLogout = async () => {
+        await supabase.auth.signOut()
+        window.location.href = '/login'
+    }
 
     return (
         <div className="flex h-screen w-full bg-slate-950 text-slate-100 overflow-hidden font-sans">
@@ -41,16 +62,16 @@ export function AppLayout({ children }: AppLayoutProps) {
                     </Link>
                 </div>
                 <div className="flex-1 overflow-auto py-2 overflow-x-hidden">
-                    <NavContent collapsed={isCollapsed} />
+                    <NavContent collapsed={isCollapsed} handleLogout={handleLogout} />
                 </div>
                 <div className="mt-auto p-4 border-t border-slate-800 overflow-hidden">
                     <div className={cn("flex items-center gap-2 transition-all", isCollapsed && "justify-center")}>
-                        <div className="h-8 w-8 rounded-full bg-emerald-900 border border-emerald-500 flex items-center justify-center text-xs font-bold flex-shrink-0">
-                            JS
+                        <div className="h-8 w-8 rounded-full bg-emerald-900 border border-emerald-500 flex items-center justify-center text-xs font-bold flex-shrink-0 text-emerald-100">
+                            {userEmail ? userEmail.substring(0, 2).toUpperCase() : "US"}
                         </div>
                         <div className={cn("text-xs transition-all duration-300 whitespace-nowrap", isCollapsed ? "w-0 opacity-0 overflow-hidden" : "w-auto opacity-100")}>
-                            <p className="font-medium text-slate-200">João Silva</p>
-                            <p className="text-slate-500">Barbearia Vip</p>
+                            <p className="font-medium text-slate-200 truncate max-w-[140px]" title={userEmail || ""}>{userEmail || "Carregando..."}</p>
+                            <p className="text-slate-500">Admin</p>
                         </div>
                     </div>
                 </div>
@@ -74,7 +95,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                             X
                         </button>
                     </div>
-                    <NavContent />
+                    <NavContent handleLogout={handleLogout} />
                 </div>
             </div>
 
@@ -100,13 +121,14 @@ export function AppLayout({ children }: AppLayoutProps) {
     )
 }
 
-function NavContent({ onClick, collapsed }: { onClick?: () => void, collapsed?: boolean }) {
+function NavContent({ onClick, collapsed, handleLogout }: { onClick?: () => void, collapsed?: boolean, handleLogout?: () => void }) {
     const pathname = usePathname()
 
     const links = [
         { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
         { href: "/chat", label: "Central de Chat", icon: MessageSquare },
-        { href: "/settings", label: "Configurações", icon: Settings },
+        { href: "/redirects", label: "Redirecionadores", icon: GitGraph },
+        { href: "/integrations", label: "Integrações", icon: Cable },
     ]
 
     return (
@@ -142,13 +164,13 @@ function NavContent({ onClick, collapsed }: { onClick?: () => void, collapsed?: 
                     <div className="h-4 w-4 flex items-center justify-center rounded border border-slate-700 bg-slate-900 text-[10px] font-bold text-slate-500 flex-shrink-0">?</div>
                     <span className={cn("whitespace-nowrap overflow-hidden transition-all duration-300", collapsed ? "w-0 opacity-0 hidden" : "w-auto opacity-100")}>Ajuda & Suporte</span>
                 </button>
-                <Link
-                    href="/login"
-                    className={cn("flex items-center gap-3 rounded-md px-3 py-2.5 text-red-400/80 hover:bg-red-950/20 hover:text-red-400 transition-all", collapsed && "justify-center px-0")}
+                <button
+                    onClick={handleLogout}
+                    className={cn("w-full flex items-center gap-3 rounded-md px-3 py-2.5 text-red-400/80 hover:bg-red-950/20 hover:text-red-400 transition-all text-left", collapsed && "justify-center px-0")}
                 >
                     <Users className="h-4 w-4 flex-shrink-0" /> {/* LogOut icon placeholder */}
                     <span className={cn("whitespace-nowrap overflow-hidden transition-all duration-300", collapsed ? "w-0 opacity-0 hidden" : "w-auto opacity-100")}>Sair</span>
-                </Link>
+                </button>
             </div>
         </nav>
     )
